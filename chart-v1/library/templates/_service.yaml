@@ -1,0 +1,37 @@
+{{- define "library.service" -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "library.projectName" . }}
+  namespace: {{ .Release.Namespace | default "default" }}
+  labels:
+    app: {{ include "library.projectName" . }}
+  {{- if .Values.service.annotations }}
+  annotations:
+    {{- toYaml .Values.service.annotations | indent 4 }}
+  {{- end }}
+spec:
+  selector:
+    app: {{ include "library.projectName" . }}
+  type: {{ .Values.service.type }}
+  {{- if and (eq .Values.service.type "LoadBalancer") .Values.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.service.loadBalancerIP }}
+  {{- end }}
+  {{- if .Values.service.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy }}
+  {{- end }}
+  ports:
+    {{- range .Values.service.ports }}
+    - port: {{ .port }}
+      targetPort: {{ .targetPort | default .port }}
+      {{- if .protocol }}
+      protocol: {{ .protocol }}
+      {{- end }}
+      {{- if .name }}
+      name: {{ .name }}
+      {{- end }}
+      {{- if and (eq $.Values.service.type "NodePort") .nodePort }}
+      nodePort: {{ .nodePort }}
+      {{- end }}
+    {{- end }}
+{{- end }}

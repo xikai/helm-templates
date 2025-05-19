@@ -1,0 +1,150 @@
+{{- define "add-alb-ingress-annotations" }}
+    # ALB ingress
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/target-type: {{ .albIngress.targeType }}
+    alb.ingress.kubernetes.io/scheme: {{ default "internet-facing" .albIngress.scheme }}
+    alb.ingress.kubernetes.io/healthcheck-path: {{ default "/ping" .albIngress.healthcheckPath }}
+    alb.ingress.kubernetes.io/healthcheck-port: {{ default "traffic-port" .albIngress.healthcheckPort | quote }}
+    alb.ingress.kubernetes.io/success-codes: '200'
+    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=300
+      {{- if .albIngress.cert }}
+    alb.ingress.kubernetes.io/actions.ssl-redirect: '{"Type": "redirect", "RedirectConfig": { "Protocol": "HTTPS", "Port": "443", "StatusCode": "HTTP_301"}}'
+    alb.ingress.kubernetes.io/certificate-arn: {{ .albIngress.cert | quote }}
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
+      {{- else }}
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+      {{- end }}
+
+  {{- with .annotations }}
+    # other annotations
+{{ toYaml . | indent 4 }}
+  {{- end }}
+{{- end }}
+
+{{- define "create-alb-service" }}
+{{- $rt := $._ }}
+{{- $valueKey := (default "service" $.key) }}
+{{- $overwritten := $.overwritten }}
+{{- $defaultName := (include "get-name" $rt) }}
+{{- $defaultPortName := (include "get-svc-port-name" $rt) }}
+{{- $servicePortName := "http" }}
+
+{{- with (default (index $rt.Values $valueKey) $overwritten) }}
+{{- $name := (default $defaultName .name ) }}
+{{- $deploymentName := (default $defaultName .deploymentName) }}
+{{- $portName := (default $defaultPortName .portName ) }}
+{{- $port := (default "80" .port ) }}
+{{- $type := (default "ClusterIP" .type ) }}
+---
+# service
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{ $name }}
+  namespace: {{ $rt.Release.Namespace }}
+  labels:
+    app: {{ $name }}
+  annotations:
+    {{- with .annotations }}
+    # other annotations
+{{ toYaml . | indent 4 }}
+    {{- end }}
+spec:
+  {{- if eq "ip" .albIngress.targeType }}
+  type: ClusterIP
+  {{- else if eq "instance" .albIngress.targeType }}
+  type: NodePort
+  {{- end }}
+
+  {{- if (eq $type "ExternalName") }}
+  externalName: {{ .externalName }}
+  {{- end }}
+  selector:
+    app: {{ $deploymentName }}
+  ports:
+  {{- if not (empty .ports) }}
+    {{- range $name, $values := .ports }}
+      {{- with $values }}
+  - name: {{ $name }}
+    targetPort: {{ default $portName .portName }}
+    port: {{ .port }}
+        {{- with .protocol }}
+    protocol: {{ . }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+  {{- else }}
+  - name: {{ $servicePortName }}
+    port: {{ $port }}
+    targetPort: {{ $portName }}
+    {{- with .protocol }}
+    protocol: {{ . }}
+    {{- end }}
+    {{- with .nodePort }}
+    nodePort: {{ . }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "create-alb-service-ingress" }}
+{{- $rt := $._ }}
+{{- $valueKey := (default "ingress" $.key) }}
+{{- $overwritten := $.overwritten }}
+{{- $defaultName := (include "get-name" $rt) }}
+{{- $servicePortName := "http" }}
+
+{{- with (default (index $rt.Values $valueKey) $overwritten) }}
+{{- $name := (default $defaultName .name ) }}
+{{- $albSSLredirect :=  .albSSLredirect -}}
+{{- template "create-alb-service" (dict "_" $rt "key" $valueKey ) }}
+
+---
+{{- if not (empty .hosts) }}
+# ingress
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  namespace: {{ $rt.Release.Namespace }}
+  annotations:
+      {{- template "add-alb-ingress-annotations" . }}
+      {{- $defaultElbTags := list "ManagedBy=eks-helm" (printf "CreatedBy=%s" $rt.Values._info.context) "Team=eks" "Billing=eks" (printf "Name=%s/%s" $rt.Release.Namespace $name)}}
+      {{- $elbTags := default list .elbTags  }}
+    alb.ingress.kubernetes.io/tags: {{ printf "%s,%s" (join "," $defaultElbTags) (join "," $elbTags) | quote }}
+spec:
+  rules:
+  {{- range .hosts }}
+  - http:
+      paths:
+    {{- if  not (empty $albSSLredirect) }}
+      - path: /*
+        backend:
+          serviceName: ssl-redirect
+          servicePort: use-annotation 
+    {{- end }}
+    {{- if not (empty .paths) }}
+      {{- range .paths }}
+      - path: {{ . }}
+        backend:
+          serviceName: {{ $name }}
+          servicePort: {{ $servicePortName }}
+      {{- end }}
+    {{- else if not (empty .servicePaths) }}
+      {{- range .servicePaths }}
+      - path: {{ .path }}
+        backend:
+          serviceName: {{ default $name .service }}
+          servicePort: {{ default $servicePortName .servicePortName }}
+      {{- end }}
+    {{- else }}
+      - path: /*
+        backend:
+          serviceName: {{ $name }}
+          servicePort: {{ $servicePortName }}
+    {{- end }}
+    host: {{ default "missing.domain" .host }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

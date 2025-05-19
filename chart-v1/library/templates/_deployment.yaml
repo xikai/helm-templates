@@ -1,0 +1,126 @@
+{{- define "library.deployment" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "library.projectName" . }}
+  namespace: {{ .Release.Namespace | default "default" }}
+  labels:
+    app: {{ include "library.projectName" . }}
+    {{- include "add-raw" .Values.deployment.labels | nindent 4 }}
+  {{- if .Values.deployment.annotations }}
+  annotations:
+    {{- toYaml .Values.deployment.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if not .Values.deployment.hpa }}
+  replicas: {{ .Values.deployment.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ include "library.projectName" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "library.projectName" . }}
+        {{- include "add-raw" .Values.deployment.podLabels | nindent 8 }}
+      {{- if .Values.deployment.podAnnotations }}
+      annotations:
+        {{- toYaml .Values.deployment.podAnnotations | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- if .Values.deployment.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.deployment.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      {{- if .Values.deployment.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.deployment.podSecurityContext | nindent 8 }}
+      {{- end }}
+      {{- if .Values.deployment.serviceAccountName }}
+      serviceAccountName: {{ .Values.deployment.serviceAccountName }}
+      {{- end }}
+      containers:
+        {{- range .Values.deployment.containers }}
+        - name: {{ .name }}
+          securityContext:
+            {{- toYaml .securityContext | nindent 12 }}
+          image: "{{ .image.repository }}:{{ .image.tag }}"
+          imagePullPolicy: {{ .image.pullPolicy | default "IfNotPresent" }}
+          {{- if .probes }}
+          {{- if .probes.liveness }}
+          livenessProbe:
+            httpGet:
+              path: {{ .probes.liveness.path | default "/" }}
+              port: {{ .probes.liveness.port | default "http" }}
+            initialDelaySeconds: {{ .probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .probes.liveness.failureThreshold }}
+            successThreshold: {{ .probes.liveness.successThreshold }}
+          {{- end }}
+          {{- if .probes.readiness }}
+          readinessProbe:
+            httpGet:
+              path: {{ .probes.readiness.path | default "/" }}
+              port: {{ .probes.readiness.port | default "http" }}
+            initialDelaySeconds: {{ .probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .probes.readiness.failureThreshold }}
+            successThreshold: {{ .probes.readiness.successThreshold }}
+          {{- end }}
+          {{- if .probes.startup }}
+          startupProbe:
+            httpGet:
+              path: {{ .probes.startup.path | default "/" }}
+              port: {{ .probes.startup.port | default "http" }}
+            initialDelaySeconds: {{ .probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .probes.startup.timeoutSeconds }}
+            failureThreshold: {{ .probes.startup.failureThreshold }}
+            successThreshold: {{ .probes.startup.successThreshold }}
+          {{- end }}
+          {{- end }}
+          {{- with .env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if or .envFromSecrets .envFromConfigMaps }}
+          envFrom:
+          {{- range .envFromSecrets }}
+          - secretRef:
+              name: {{ . }}
+          {{- end }}
+          {{- range .envFromConfigMaps }}
+          - configMapRef:
+              name: {{ . }}
+          {{- end }}
+          {{- end }}
+          {{- with .ports }}
+          ports:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+        {{- end }}
+      {{- with .Values.deployment.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

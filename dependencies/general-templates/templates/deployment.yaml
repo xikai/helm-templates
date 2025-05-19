@@ -1,0 +1,592 @@
+{{- define "add-dep-hash-annotations" }}
+{{- $rt := $ }}
+## add-dep-hash-annotations
+{{- /* configMap with AsConfig */ -}}
+{{- range $name, $values := $rt.Values.configMapFiles }}
+  {{- $content := include "add-configmap-files-data" (dict "_" $rt "data" $values)}}
+  {{- if (not (empty ($content | fromYaml )))}}
+dep.configmap.hash/{{ $name }}: {{ $content | sha256sum | quote }}
+  {{- else }}
+## dep.configmap.hash/{{ $name }}: empty
+  {{- end }}
+{{- end }}
+{{- /* configMap with AsSecret */ -}}
+{{- range $name, $values := $rt.Values.configMapBinaryFiles }}
+  {{- $content := include "add-secret-files-data" (dict "_" $rt "data" $values)}}
+  {{- if (not (empty ($content | fromYaml )))}}
+dep.configmap.hash/{{ $name }}: {{ $content | sha256sum | quote }}
+  {{- else }}
+## dep.configmap.hash/{{ $name }}: empty
+  {{- end }}
+{{- end }}
+{{- range $name, $values := $rt.Values.configMapEnv }}
+  {{- $content := include "add-configmap-env-data" (dict "_" $rt "data" $values)}}
+  {{- if not (empty $content) }}
+dep.configmap.hash/{{ $name }}: {{ $content | sha256sum | quote }}
+  {{- else }}
+## dep.secret.hash/{{ $name }}: empty
+  {{- end }}
+{{- end }}
+{{- /* secret with AsSecret */ -}}
+{{- range $secretFileList := list $rt.Values.secretFiles $rt.Values.secretBinaryFiles }}
+  {{- range $name, $values := $secretFileList }}
+    {{- $content := include "add-secret-files-data" (dict "_" $rt "data" $values)}}
+    {{- if (not (empty ($content | fromYaml )))}}
+dep.secret.hash/{{ $name }}: {{ $content | sha256sum | quote }}
+    {{- else }}
+## dep.secret.hash/{{ $name }}: empty
+    {{- end }}
+  {{- end }}
+{{- end }}
+
+{{- range $name, $values := $rt.Values.secretEnv }}
+  {{- $content := include "add-secret-env-data" (dict "_" $rt "data" $values)}}
+  {{- if not (empty $content) }}
+dep.secret.hash/{{ $name }}: {{ $content | sha256sum | quote }}
+  {{- else }}
+## dep.secret.hash/{{ $name }}: empty
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "add-env-from" }}
+{{- $rt := $._ }}
+{{- $container := $.container }}
+
+{{- with $container.envFrom }}
+envFrom:
+{{- range $ignore, $envName := . }}
+  {{- range (list $rt.Values.secretEnv $rt.Values.secretEnvExternal) }}
+    {{- with . }}
+      {{- if hasKey . $envName }}
+- secretRef:
+    name: {{ $envName }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+
+  {{- range (list $rt.Values.configMapFiles $rt.Values.configMapEnv $rt.Values.configMapEnvExternal) }}
+    {{- with . }}
+      {{- if hasKey . $envName }}
+- configMapRef:
+    name: {{ $envName }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "add-healthcheck-default" }}
+readinessProbe:
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 1
+livenessProbe:
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 1
+{{- end }}
+{{- define "add-healthcheck-tcp" }}
+tcpSocket:
+  port: {{ .port }}
+{{- end }}
+{{- define "add-healthcheck-off" }}
+exec:
+  command:
+  - "echo"
+  - "ok"
+{{- end }}
+{{- define "add-healthcheck-custom" }}
+{{- with .exec }}
+exec:
+  {{- include "add-command-args" . | indent 2 }}
+{{- end}}
+{{- with .tcp }}
+tcpSocket:
+  port: {{ .port }}
+{{- end }}
+{{- with .http }}
+httpGet:
+  port: {{ .port }}
+  {{- with .path }}
+  path: {{ . }}
+  {{- end }}
+  {{- with .host }}
+  host: {{ . }}
+  {{- end }}
+  {{- with .scheme }}
+  scheme: {{ . }}
+  {{- end }}
+  {{- with .httpHeaders }}
+  httpHeaders:
+    {{- range $name, $value := . }}
+  - name: {{ $name | quote }}
+    value: {{ $value | quote }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "add-healthcheck-actions-format" }}
+{{- with .exec }}
+exec:
+  {{- include "add-command-args" . | indent 2 }}
+{{- end}}
+{{- with .tcpSocket }}
+tcpSocket:
+  port: {{ .port }}
+{{- end }}
+{{- with .httpGet }}
+httpGet:
+  port: {{ .port }}
+  {{- with .path }}
+  path: {{ . }}
+  {{- end }}
+  {{- with .host }}
+  host: {{ . }}
+  {{- end }}
+  {{- with .scheme }}
+  scheme: {{ . }}
+  {{- end }}
+  httpHeaders:
+  {{- range .httpHeaders }}
+  - name: {{ .name | quote }}
+    value: {{ .value | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "add-healthcheck-format" }}
+{{- include "add-healthcheck-actions-format" . }}
+initialDelaySeconds: {{ .initialDelaySeconds }}
+timeoutSeconds: {{ .timeoutSeconds }}
+periodSeconds: {{ .periodSeconds }}
+{{- end }}
+
+
+{{- define "add-healthcheck" }}
+{{- $base := (include "add-healthcheck-default" . | fromYaml) }}
+{{- if .healthcheckOff }}
+  {{- $healthcheck := (include "add-healthcheck-off" . | fromYaml) }}
+  {{- $_ := mergeOverwrite $base.readinessProbe $healthcheck }}
+  {{- $_ := mergeOverwrite $base.livenessProbe $healthcheck }}
+{{- else if empty .healthcheck }}
+  {{- $healthcheck := (include "add-healthcheck-tcp" . | fromYaml) }}
+  {{- $_ := mergeOverwrite $base.readinessProbe $healthcheck }}
+  {{- $_ := mergeOverwrite $base.livenessProbe $healthcheck }}
+{{- else }}
+  {{- with .healthcheck }}
+    {{- $healthcheck := (include "add-healthcheck-custom" . | fromYaml) }}
+    {{- $_ := mergeOverwrite $base.readinessProbe $healthcheck }}
+    {{- $_ := mergeOverwrite $base.livenessProbe $healthcheck }}
+    {{- with .readInitialDelaySeconds }}
+      {{- $_ := set $base.readinessProbe "initialDelaySeconds" . }}
+    {{- end }}
+    {{- with .readPeriodSeconds }}
+      {{- $_ := set $base.readinessProbe "periodSeconds" . }}
+    {{- end }}
+    {{- with .readTimeoutSeconds }}
+      {{- $_ := set $base.readinessProbe "timeoutSeconds" . }}
+    {{- end }}
+    {{- with .liveInitialDelaySeconds }}
+      {{- $_ := set $base.livenessProbe "initialDelaySeconds" . }}
+    {{- end }}
+    {{- with .livePeriodSeconds }}
+      {{- $_ := set $base.livenessProbe "periodSeconds" . }}
+    {{- end }}
+    {{- with .liveTimeoutSeconds }}
+      {{- $_ := set $base.livenessProbe "timeoutSeconds" . }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+## add-healthcheck
+readinessProbe:
+{{- /* trim all newline for no differences(no extra new space to last line) */}}
+{{ include "add-healthcheck-format" $base.readinessProbe | trimAll "\n" | indent 2 }}
+livenessProbe:
+{{ include "add-healthcheck-format" $base.livenessProbe | trimAll "\n" | indent 2 }}
+{{- end }}
+
+{{- define "add-command-args" }}
+  {{- with .command }}
+# add-command
+command:
+{{- include "add-raw" . }}
+{{- /*
+  {{- range $value := . }}
+{{ $value | quote }}
+  {{- end }}
+*/}}
+  {{- end }}
+  {{- with .args }}
+# add-args
+args:
+{{- include "add-raw" . }}
+{{- /*
+  {{- range $value := . }}
+{{ $value | quote }}
+  {{- end }}
+*/}}
+  {{- end }}
+{{- end }}
+
+{{- define "add-env" }}
+{{- with .env }}
+# add-env
+env:
+  {{- range $key, $value := . }}
+- name: {{ $key | quote }}
+  value: {{ $value | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "add-volumeMounts" }}
+{{- with .volumeMounts }}
+# add-volumeMounts
+volumeMounts:
+  {{- range $name, $options := . }}
+    {{- with $options }}
+      {{- if empty .files }}
+- mountPath: {{ .path }}
+  name: {{ $name }}
+        {{- if not (empty .readOnly) }}
+  readOnly: true
+        {{- end }}
+      {{- else }}
+        {{- range .files }}
+- mountPath: {{ $options.path }}/{{ . }}
+  name: {{ $name }}
+  subPath: {{ . }}
+          {{- if not (empty $options.readOnly) }}
+  readOnly: true
+          {{- end }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "add-resources" }}
+{{- $rt := $._ }}
+{{- $container := $.container }}
+{{- $grade := (default "default" $container.resourcesGrade) }}
+
+# add-resources
+resources:
+{{- $resourceName :=  (printf "%s-resources" $grade) }}
+{{- $default := (include $resourceName $rt) | fromYaml }}
+{{- $overwrite := $container.resources }}
+# {{ $resourceName }}
+{{- if empty $overwrite }}
+  {{ include "add-raw" $default | indent 2 }}
+{{- else}}
+  {{- /* requests & limits */ -}}
+  {{- range $k, $v := $default }}
+    {{- if hasKey $overwrite $k }}
+    {{- $overwriteK := (index $overwrite $k) }}
+  # overwritten {{ $k }}
+  {{ $k }}:
+    {{- /* cpu & memory */ -}}
+      {{- range $kk, $vv := $v }}
+        {{- if hasKey $overwriteK $kk }}
+    {{ $kk }}: {{ index $overwriteK $kk }}
+        {{- else }}
+    {{ $kk }}: {{ $vv }}
+        {{- end }}
+      {{- end }}
+    {{- else }}
+  # default {{ $k }}
+  {{ $k }}:
+    {{ include "add-raw" $v | indent 4 }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "add-container-attributes" }}
+{{- $rt := $._ }}
+{{- $containerDict := $ }}
+{{- $container := $.container }}
+  {{- include "add-image" (dict "_" $rt "image" $container.image) }}
+  {{- include "add-env" $container }}
+  {{- include "add-volumeMounts" $container }}
+  {{- include "add-resources" $containerDict }}
+  {{- include "add-raw" $container.raw }}
+  {{- include "add-command-args" $container }}
+  {{- include "add-env-from" $containerDict }}
+{{- end }}
+
+{{- define "add-affinity" }}
+# affinity for best effort to assign pod across nodes
+# ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - {{ $.deploymentName }}
+        topologyKey: "kubernetes.io/hostname"
+{{- end }}
+
+{{- define "add-volumes" }}
+{{- $rt := $._ }}
+{{- $containers := $.deployment.containers }}
+{{- $initContainers := $.deployment.initContainers }}
+{{- $volumes := $.deployment.volumes }}
+#volumes
+volumes:
+{{- range $name, $configs := $volumes }}
+- name: {{ $name }}
+{{- include "add-raw" $configs | indent 2 }}
+{{- end }}
+{{- $mergedVolumeMounts := dict }}
+{{- range $containerList := list $containers $initContainers }}
+  {{- range $name, $container := $containerList }}
+    {{- if $container.volumeMounts }}
+      {{- $mergedVolumeMounts := merge $mergedVolumeMounts $container.volumeMounts }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- range $volumeName, $options := $mergedVolumeMounts }}
+  {{- range $secretFileList := list $rt.Values.secretFiles $rt.Values.secretFilesExternal $rt.Values.secretBinaryFiles $rt.Values.secretBinaryFilesExternal }}
+    {{- if $secretFileList }}
+      {{- with (index $secretFileList $volumeName) }}
+- name: {{ $volumeName }}
+  secret:
+        {{- with $options.mode }}
+    defaultMode: {{ . }}
+        {{- end }}
+    secretName: {{ $volumeName }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- range $configMapFileList :=( list $rt.Values.configMapFiles $rt.Values.configMapBinaryFiles $rt.Values.configMapFilesExternal $rt.Values.configMapBinaryFilesExternal) }}
+    {{- if $configMapFileList }}
+      {{- with (index $configMapFileList $volumeName) }}
+- name: {{ $volumeName }}
+  configMap:
+        {{- with $options.mode }}
+    defaultMode: {{ . }}
+        {{- end }}
+    name: {{ $volumeName }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "add-image" }}
+{{- $rt := $._ }}
+# image
+{{- with (index $rt.Values.images .image) }}
+image: "{{ .repository }}:{{ .tag }}"
+imagePullPolicy: {{ default "IfNotPresent" .pullPolicy }}
+{{- end }}
+{{- end }}
+
+{{- define "add-node-selector" }}
+{{- with .nodeSelector }}
+# nodeSelector
+nodeSelector:
+  {{- range $key, $value := . }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+
+{{- define "add-tolerations" }}
+{{- with .tolerations }}
+# tolerations
+tolerations:
+{{- include "add-raw" . }}
+{{- end }}
+{{- end }}
+
+{{- define "add-service-account" }}
+{{- with .serviceAccount }}
+# nodeSelector
+serviceAccountName: {{ . }}
+{{- end }}
+{{- end }}
+
+{{- define "add-iam" }}
+{{- with .iam }}
+iam.amazonaws.com/role: {{ . | quote }}
+{{- end }}
+{{- end }}
+
+{{- define "add-ds-rolling-update" }}
+updateStrategy:
+  rollingUpdate:
+    maxUnavailable: 1
+  type: RollingUpdate
+{{- end }}
+
+{{- define "add-rolling-update" }}
+strategy:
+  rollingUpdate:
+    maxSurge: 25%
+    maxUnavailable: 0
+  type: RollingUpdate
+{{- end }}
+
+{{- define "add-lifecycle-default" }}
+preStop:
+  exec:
+    command: ["/bin/sh", "-c", "sleep 5"]
+{{- end }}
+
+{{- /*
+*/}}
+
+{{- define "add-lifecycle" }}
+{{- $default := (include "add-lifecycle-default" . | fromYaml) }}
+{{- $lifecycle := (default $default .lifecycle) }}
+{{- if (empty $lifecycle.preStop) }}
+  {{- if (not (hasKey $lifecycle "preStop")) }}
+    {{- $_ := set $lifecycle "preStop" $default.preStop }}
+  {{- else }}
+    {{- $_ := unset $lifecycle "preStop" }}
+  {{- end}}
+{{- end }}
+{{- if not (empty $lifecycle) }}
+lifecycle:
+  {{- include "add-raw" $lifecycle | indent 2 }}
+{{- end }}
+{{- end }}
+
+{{- define "add-auto-deploy-annotations" }}
+{{- end }}
+
+{{- define "add-auto-deploy-label" }}
+{{- end }}
+
+{{- define "create-deployment" }}
+{{- $rt := $._ }}
+{{- $valueKey := (default "deployment" $.key) }}
+{{- $overwritten := $.overwritten }}
+{{- $defaultName := (include "get-name" $rt) }}
+{{- $defaultPortName := (include "get-svc-port-name" $rt) }}
+
+{{- with (default (index $rt.Values $valueKey) $overwritten) }}
+
+{{- $deploymentName := (default $defaultName .name ) }}
+{{- $deploymentDict := dict "_" $rt "deployment" . "deploymentName" $deploymentName }}
+# deployment
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $deploymentName }}
+  namespace: {{ $rt.Release.Namespace }}
+  labels:
+    app: {{ $deploymentName }}
+  annotations:
+    {{- if empty $deploymentDict.disableReloader }}
+    reloader.stakater.com/auto: "true"
+    {{- end }}
+    {{- include "add-raw" .deploymentAnnotations | indent 4  }}
+spec:
+  {{- with .replicaCount }}
+  replicas: {{ default 2 . }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ $deploymentName }}
+  {{- include "add-rolling-update" . | nindent 2 }}
+  template:
+    metadata:
+      annotations:
+        {{- include "add-dep-hash-annotations" $rt | indent 8 }}
+        {{- include "add-iam" . | indent 8 }}
+  {{- with .annotations }}
+        {{- include "add-raw" . | indent 8 }}
+  {{- end }}
+      labels:
+        app: {{ $deploymentName }}
+  {{- with .labels }}
+        {{- include "add-raw" . | indent 8 }}
+  {{- end }}
+    spec:
+      {{- include "add-raw" .raw | indent 6 }}
+      {{- include "add-service-account" . | indent 6 }}
+      {{- include "add-node-selector" . | indent 6 }}
+      {{- include "add-tolerations" . | indent 6 }}
+      {{- include "add-affinity" $deploymentDict | indent 6 }}
+      {{- include "add-volumes" $deploymentDict | indent 6 }}
+  {{- with .initContainers }}
+      #init containers
+      initContainers:
+    {{- range $name, $container := . }}
+      {{- with $container }}
+      {{- $containerDict := dict "_" $rt "container" . }}
+    {{- if eq $name "default" }}
+      - name: {{ $deploymentName }}-init
+    {{- else }}
+      - name: {{ $name }}
+    {{- end }}
+        {{- include "add-container-attributes" $containerDict | indent 8 }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+
+      containers:
+  {{- $containers := .containers }}
+  {{- range $name, $container := $containers }}
+    {{- with $container }}
+    {{- $containerDict := dict "_" $rt "container" . }}
+    {{- if eq $name "default" }}
+      - name: {{ $deploymentName }}
+    {{- else }}
+      - name: {{ $name }}
+    {{- end }}
+        {{- include "add-lifecycle" . | nindent 8 }}
+        # port
+        ports:
+    {{- if not (empty .ports) }}
+      {{- range .ports }}
+        - containerPort: {{ .port }}
+        {{- with .protocol }}
+          protocol: {{ . }}
+        {{- end }}
+        {{- with .portName }}
+          name: {{ . }}
+        {{- end }}
+      {{- end }}
+    {{- else }}
+        - containerPort: {{ .port }}
+      {{- if not (empty .portName) }}
+          name: {{ .portName }}
+      {{- else }}
+        {{- $length := len $containers }}
+        {{- if eq $length 1 }}
+          name: {{ $defaultPortName }}
+        {{- else }}
+        {{- end }}
+      {{- end }}
+      {{- with .protocol }}
+          protocol: {{ . }}
+      {{- end }}
+    {{- end }}
+      {{- include "add-healthcheck" . | indent 8 }}
+      {{- include "add-container-attributes" $containerDict | indent 8 }}
+
+    {{- end }}
+  {{- end }}
+---
+{{- template "create-hpa" $deploymentDict }}
+{{- /*
+---
+{{- template "create-ppt-autoscaler" $deploymentDict }}
+*/}}
+{{- end }}
+{{- end }}

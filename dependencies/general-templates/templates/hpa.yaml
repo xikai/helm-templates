@@ -1,0 +1,86 @@
+{{- define "create-hpa" }}
+{{- $rt := $._ }}
+{{- $deployment := $.deployment }}
+{{- $deploymentName := $.deploymentName }}
+{{- $overwritten := $.hpa }}
+
+{{- if empty $deployment.disableHpa }}
+  {{- $defaultHpa := (include "default-hpa" $rt | fromYaml) }}
+  {{- $hpa := (default $defaultHpa (default $deployment.hpa $overwritten) )}}
+---
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $deploymentName }}
+  namespace: {{ $rt.Release.Namespace }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $deploymentName }}
+  {{- with $hpa }}
+  minReplicas: {{ default $defaultHpa.min .min }}
+  maxReplicas: {{ default $defaultHpa.max .max }}
+  targetCPUUtilizationPercentage: {{ default $defaultHpa.cpu .cpu }}
+  {{- end }}
+{{- /*
+  metrics:
+  {{- if not (empty $deployment.hpa) }}
+    {{- with $deployment.hpa }}
+      {{- if not .disableCpu }}
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
+      {{- end }}
+      {{- if not .disableRequestPerSecond }}
+  - type: Pods
+    pods:
+      metric:
+        name: packets-per-second
+      targetAverageValue: 1k
+  - type: Object
+    object:
+      metric:
+        name: requests-per-second
+      describedObject:
+        apiVersion: extensions/v1beta1
+        kind: Ingress
+        name: main-route
+      target:
+        kind: Value
+        value: 10k
+      {{- end }}
+      {{- with .rawMetrics }}
+    {{- include "add-raw" . | indent 2 }}
+      {{- end }}
+    {{- end }}
+  {{- else }}
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
+  - type: Pods
+    pods:
+      metric:
+        name: packets-per-second
+      targetAverageValue: 1k
+  - type: Object
+    object:
+      metric:
+        name: requests-per-second
+      describedObject:
+        apiVersion: extensions/v1beta1
+        kind: Ingress
+        name: main-route
+      target:
+        kind: Value
+        value: 10k
+  {{- end }}
+*/}}
+{{- end }}
+{{- end }}

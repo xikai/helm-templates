@@ -1,0 +1,82 @@
+
+#生成基础名称
+#nameOverride存在时使用nameOverride，否则使用chart名称
+{{- define "library.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+
+# 创建完全限定的应用名称
+# fullnameOverride存在时使用fullnameOverride，否则使用`release名称-chart名称，
+# 如果release名称包含chart名称，我们将只使用release名称
+{{- define "library.fullname" -}}
+{{- if .Values.fullnameOverride }}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- $name := default .Chart.Name .Values.nameOverride }}
+{{- if contains $name .Release.Name }}
+{{- .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+
+# 创建 chart 名称和版本作为使用的标签
+{{- define "library.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+
+# 选择器标签
+{{- define "library.selectorLabels" -}}
+app: {{ include "library.projectName" . }}
+app.kubernetes.io/name: {{ include "library.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+
+# 通用标签
+{{- define "library.labels" -}}
+helm.sh/chart: {{ include "library.chart" . }}
+{{ include "library.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+
+# 创建服务账号名称
+{{- define "library.serviceAccountName" -}}
+{{- if .Values.serviceAccount }}
+{{- default (include "library.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+
+# 通用注解
+{{- define "library.annotations" -}}
+{{- if .Values.annotations }}
+annotations:
+  {{- toYaml .Values.annotations | nindent 4 }}
+{{- end }}
+{{- end }}
+
+
+# 创建项目名称
+{{- define "library.projectName" -}}
+{{- default .Release.Name .Values.projectName | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+
+# 添加原始数据
+# 将传入的任何数据结构（如映射、列表等）转换为YAML格式并原样输出
+{{- define "add-raw" }}
+{{- with . }}
+{{ toYaml . }}
+{{- end }}
+{{- end }}

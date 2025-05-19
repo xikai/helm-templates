@@ -1,0 +1,216 @@
+# Default values for library chart
+
+# 环境: dev, test, pre, prod 等
+stage: "dev"
+
+nameOverride: ""
+fullnameOverride: ""
+projectName: ""
+
+
+deployment:
+  replicaCount: 1
+  hpa:
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 60
+        policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 60
+          - type: Pods
+            value: 4
+            periodSeconds: 60
+      scaleDown:
+        stabilizationWindowSeconds: 120
+        policies:
+          - type: Percent
+            value: 30
+            periodSeconds: 60
+
+  labels:
+    aaa: bb
+  podLabels:
+    aaa: bb
+  annotations:
+    ccc: dd
+  podAnnotations:
+    ccc: dd
+
+  podSecurityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+
+  serviceAccountName: ""
+
+  nodeSelector: 
+    nodename: testArm
+
+  affinity: 
+    podAntiAffinity:
+      #requiredDuringSchedulingIgnoredDuringExecution:
+      #- labelSelector:
+      #    matchExpressions:
+      #    - key: name
+      #      operator: In
+      #      values:
+      #      - $name
+      #  topologyKey: "kubernetes.io/hostname"
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: name
+              operator: In
+              values:
+              - $name
+          topologyKey: kubernetes.io/hostname
+
+  tolerations: 
+    - key: "reasoning-train"
+      operator: "Equal"
+      value: "true"
+      effect: "NoSchedule"
+  imagePullSecrets: []
+
+  volumes:
+    - name: config-volume
+      configMap:
+        name: app-config
+
+  initContainers: 
+    - name: setsysctl
+      image:
+        repository: "public.ecr.aws/docker/library/busybox"
+        tag: "latest"
+        pullPolicy: IfNotPresent
+      securityContext:
+        privileged: true
+      command: 
+        - sh
+        - -c
+        - |
+          sysctl -w net.core.somaxconn=65535
+          sysctl -w net.ipv4.ip_local_port_range="1024 65535"
+          sysctl -w net.ipv4.tcp_max_tw_buckets=65535
+          sysctl -w net.ipv4.tcp_fin_timeout=30
+          sysctl -w net.ipv4.tcp_timestamps=1
+          sysctl -w net.ipv4.tcp_tw_reuse=1
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 50m
+          memory: 64Mi
+
+  containers:  # 必须提供
+    - name: main
+      securityContext: {}
+      image:
+        repository: "public.ecr.aws/nginx/nginx"
+        tag: "latest"
+        pullPolicy: Always
+      ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+      probes:
+        liveness:
+          path: /health
+          port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 1
+          failureThreshold: 3
+          successThreshold: 1
+        readiness:
+          path: /ready
+          port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 1
+          failureThreshold: 3
+          successThreshold: 1
+        startup:
+          path: /startup
+          port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 1
+          failureThreshold: 30
+          successThreshold: 1
+      env: 
+        - name: ENV_VAR
+          value: "value"
+      envFromSecrets: 
+        - secret-name
+      envFromConfigMaps: 
+        - config-name
+      volumeMounts: 
+        - name: config-volume
+          mountPath: /etc/config
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 128Mi
+
+
+service:
+  annotations:
+    aaa: bb
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: http
+      name: http
+      protocol: TCP
+      # nodePort: 30080  # 如果服务类型为NodePort，则启用
+
+
+albIngress:
+  loadbalancerName: dev-myapp  # ALB负载均衡器名称（相同名称的Ingress共享ALB），如果留空，则每个Ingress独立创建ALB
+  scheme: internet-facing  # 负载均衡器类型（internet-facing, internal）
+  targetType: ip  # 负载均衡器类型（ip, instance）
+  subnets: subnet-09473625d38d40f39,subnet-0bdd700070f273105,subnet-02be37b601720c6fe
+  
+  certificateArn: arn:aws:acm:us-west-2:499890050841:certificate/c0a77581-c66b-4a09-868e-1375733220e9  #optional,为空时，不启用https
+  sslPolicy: ELBSecurityPolicy-TLS-1-2-2017-01  #optional
+  httpsRedirect: true  #optional
+  healthcheckPath: /health  #optional
+  successCodes: 200,301,302  #optional
+  securityGroups: sg-xxxxxxxxx  #optional
+  loadBalancerAttributes: routing.http.drop_invalid_header_fields.enabled=true  #optional
+  tags: cost=dev  #optional
+  groupName: dev-myapp  #optional, ALB负载均衡器分组名称（相同分组名的Ingress共享ALB），如果留空，则每个Ingress独立创建ALB
+
+  tls:
+    - secretName: myapp-tls-secret
+      hosts:
+        - myapp.domain.com
+
+  hosts:
+    - host: myapp.domain.com
+      paths:
+        - path: "/"
+          pathType: Prefix
+          serviceName: ""   # 自定义服务名称（留空，默认使用projectName）
+          port: 80
+
+
+serviceAccount:
+  name: ""   # ServiceAccount名称（可选，默认使用fullname）
+  annotations: {}
+    # eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/my-role

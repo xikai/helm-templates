@@ -1,0 +1,86 @@
+{{- define "library.commonIngressAnnotations" }}
+alb.ingress.kubernetes.io/load-balancer-name: {{ .Values.albIngress.loadbalancerName }}
+alb.ingress.kubernetes.io/scheme: {{ default "internet-facing" .Values.albIngress.scheme }}
+alb.ingress.kubernetes.io/target-type: {{ default "ip" .Values.albIngress.targetType }}
+alb.ingress.kubernetes.io/subnets: {{ .Values.albIngress.subnets }}
+  {{- if .Values.albIngress.certificateArn }}
+alb.ingress.kubernetes.io/certificate-arn: {{ .Values.albIngress.certificateArn }}
+alb.ingress.kubernetes.io/ssl-policy: {{ default "ELBSecurityPolicy-TLS-1-2-2017-01" .Values.albIngress.sslPolicy }}
+    {{- if .Values.albIngress.httpsRedirect }}
+alb.ingress.kubernetes.io/actions.ssl-redirect: '{"Type": "redirect", "RedirectConfig": {"Protocol": "HTTPS", "Port": "443", "StatusCode": "HTTP_301"}}'
+    {{- end }}
+alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+  {{- else }}
+alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+  {{- end }}
+alb.ingress.kubernetes.io/healthcheck-path: {{ default "/" .Values.albIngress.healthcheckPath }}
+alb.ingress.kubernetes.io/success-codes: {{ default "200,301,302" .Values.albIngress.successCodes }}
+  {{- if .Values.albIngress.securityGroups }}
+alb.ingress.kubernetes.io/security-groups: {{ .Values.albIngress.securityGroups }}
+  {{- end }}
+  {{- if .Values.albIngress.loadBalancerAttributes }}
+alb.ingress.kubernetes.io/load-balancer-attributes: {{ .Values.albIngress.loadBalancerAttributes }}
+  {{- end }}
+  {{- if .Values.albIngress.tags }}
+alb.ingress.kubernetes.io/tags: {{ .Values.albIngress.tags }}
+  {{- end }}
+  {{- if .Values.albIngress.groupName }}
+alb.ingress.kubernetes.io/group.name: {{ .Values.albIngress.groupName }}
+  {{- end }}
+{{- end }}
+
+---
+{{- define "library.alb-ingress" -}}
+{{- if .Values.albIngress -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "library.fullname" . }}
+  namespace: {{ .Release.Namespace | default "default" }}
+  labels:
+    {{- include "library.labels" . | nindent 4 }}
+  annotations:
+    {{- include "library.commonIngressAnnotations" . | nindent 4 }}
+    {{- if .Values.albIngress.annotations }}
+    {{- include "add-raw" .Values.albIngress.annotations | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: alb
+  {{- if .Values.albIngress.tls }}
+  tls:
+    {{- range .Values.albIngress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- if and .Values.albIngress.certificateArn .Values.albIngress.httpsRedirect }}
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ssl-redirect
+                port:
+                  name: use-annotation
+    {{- end }}
+    {{- range .Values.albIngress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ .serviceName | default (include "library.projectName" $) }}
+                port:
+                  number: {{ .port }}
+          {{- end }}
+    {{- end }}
+{{- end }}
+{{- end -}} 

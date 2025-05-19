@@ -1,0 +1,63 @@
+{{- define "create-multi-object" }}
+{{- $object := $.object }}
+{{- $defaultKey := $.defaultKey }}
+# multiple {{ $object }}
+{{- $rt := $._ }}
+{{- $valueKey := (default $defaultKey $.key) }}
+{{- $overwritten := $.overwritten }}
+
+{{- with (default (index $rt.Values $valueKey) $overwritten) }}
+  {{- $base := .base }}
+  {{- range $name, $valuesOverwritten := .multi }}
+      {{- $valuesOverwrittenWithName := mergeOverwrite $valuesOverwritten (dict "name" $name)}}
+      {{- $deepcopyBase :=  $base | toYaml | fromYaml }}
+      {{- $values := mergeOverwrite $deepcopyBase $valuesOverwrittenWithName }}
+      {{- if eq "deployment" $object }}
+{{- template "create-deployment" (dict "_" $rt "overwritten" $values) }}
+
+      {{- else if eq "service" $object }}
+{{- template "create-service" (dict "_" $rt "overwritten" $values) }}
+
+      {{- else if eq "service-ingress" $object }}
+{{- template "create-service-ingress" (dict "_" $rt "overwritten" $values) }}
+
+      {{- else if eq "job" $object }}
+{{- template "create-job" (dict "_" $rt "overwritten" $values) }}
+
+      {{- else if eq "cronjob" $object }}
+{{- template "create-cronjob" (dict "_" $rt "overwritten" $values) }}
+
+      {{- else if eq "pvc" $object }}
+{{- template "create-pvc" (dict "_" $rt "overwritten" $values) }}
+
+      {{- else }}
+      {{- end }}
+  {{- end }}
+{{- end }}
+
+{{- end }}
+
+{{- define "create-multi-deployment" }}
+{{- template "create-multi-object" (mergeOverwrite $ (dict "object" "deployment" "defaultKey" "multiDeployment")) }}
+{{- end }}
+
+{{- define "create-multi-service" }}
+{{- template "create-multi-object" (mergeOverwrite $ (dict "object" "service" "defaultKey" "multiService")) }}
+{{- end }}
+
+{{- define "create-multi-service-ingresse" }}
+{{- template "create-multi-object" (mergeOverwrite $ (dict "object" "service-ingress" "defaultKey" "multiIngress")) }}
+{{- end }}
+
+{{- define "create-multi-job" }}
+{{- template "create-multi-object" (mergeOverwrite $ (dict "object" "job" "defaultKey" "multiJob")) }}
+{{- end }}
+
+{{- define "create-multi-cronjob" }}
+{{- template "create-multi-object" (mergeOverwrite $ (dict "object" "cronjob" "defaultKey" "multiCronjob")) }}
+{{- end }}
+
+{{- define "create-multi-pvc" }}
+{{- template "create-multi-object" (mergeOverwrite $ (dict "object" "pvc" "defaultKey" "multiPvc")) }}
+{{- end }}
+

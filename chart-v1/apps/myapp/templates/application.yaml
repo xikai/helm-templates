@@ -1,0 +1,22 @@
+{{- include "library.deployment" . }}
+
+{{- if .Values.deployment.hpa }}
+---
+{{- include "library.hpa" . }}
+{{- end }}
+
+{{- if .Values.service }}
+---
+{{- include "library.service" . }}
+{{- end }}
+
+{{- if .Values.albIngress }}
+---
+{{- include "library.alb-ingress" . }}
+{{- end }}
+
+{{- if .Values.serviceAccount }}
+---
+{{- include "library.serviceAccount" . }}
+{{- end }}
+

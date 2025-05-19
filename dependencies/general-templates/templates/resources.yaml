@@ -1,0 +1,177 @@
+{{- define "guarantee-medium-resources" }}
+## resources - guarantee-medium
+  {{- if (include "is-production" $)}}
+requests:
+  memory: 512Mi
+  cpu: 200m
+limits:
+  memory: 512Mi
+  cpu: 200m
+  {{- else }}
+requests:
+  memory: 512Mi
+  cpu: 100m
+limits:
+  memory: 512Mi
+  cpu: 100m
+  {{- end }}
+{{- end }}
+
+{{- define "xlarge-resources" }}
+## resources - xlarge
+  {{- if (include "is-production" $)}}
+requests:
+  memory: 1024Mi
+  cpu: 500m
+limits:
+  memory: 2048Mi
+  cpu: 2000m
+  {{- else }}
+requests:
+  memory: 128Mi
+  cpu: 50m
+limits:
+  memory: 2048Mi
+  cpu: 2000m
+  {{- end }}
+{{- end }}
+
+{{- define "large-resources" }}
+## resources - large
+  {{- if (include "is-production" $)}}
+requests:
+  memory: 512Mi
+  cpu: 200m
+limits:
+  memory: 1024Mi
+  cpu: 1000m
+  {{- else }}
+requests:
+  memory: 128Mi
+  cpu: 50m
+limits:
+  memory: 1024Mi
+  cpu: 1000m
+  {{- end }}
+{{- end }}
+
+{{- define "medium-resources" }}
+## resources - medium
+  {{- if (include "is-production" $)}}
+requests:
+  memory: 256Mi
+  cpu: 200m
+limits:
+  memory: 512Mi
+  cpu: 500m
+  {{- else }}
+requests:
+  memory: 128Mi
+  cpu: 50m
+limits:
+  memory: 512Mi
+  cpu: 500m
+  {{- end }}
+{{- end }}
+
+{{- define "guarantee-micro-resources" }}
+## resources - guarantee-micro
+  {{- if (include "is-production" $)}}
+requests:
+  memory: 128Mi
+  cpu: 50m
+limits:
+  memory: 128Mi
+  cpu: 50m
+  {{- else }}
+requests:
+  memory: 128Mi
+  cpu: 50m
+limits:
+  memory: 128Mi
+  cpu: 50m
+  {{- end }}
+{{- end }}
+
+{{- define "guarantee-small-resources" }}
+## resources - guarantee-small
+  {{- if (include "is-production" $)}}
+requests:
+  memory: 256Mi
+  cpu: 100m
+limits:
+  memory: 256Mi
+  cpu: 100m
+  {{- else }}
+requests:
+  memory: 256Mi
+  cpu: 100m
+limits:
+  memory: 256Mi
+  cpu: 100m
+  {{- end }}
+{{- end }}
+
+{{- define "small-resources" }}
+## resources - small
+  {{- if (include "is-production" $)}}
+requests:
+  memory: 256Mi
+  cpu: 50m
+limits:
+  memory: 512Mi
+  cpu: 500m
+  {{- else }}
+requests:
+  memory: 64Mi
+  cpu: 10m
+limits:
+  memory: 512Mi
+  cpu: 500m
+  {{- end }}
+{{- end }}
+
+{{- define "micro-resources" }}
+## resources - micro
+  {{- if (include "is-production" $)}}
+requests:
+  memory: 128Mi
+  cpu: 10m
+limits:
+  memory: 512Mi
+  cpu: 100m
+  {{- else }}
+requests:
+  memory: 64Mi
+  cpu: 10m
+limits:
+  memory: 512Mi
+  cpu: 100m
+  {{- end }}
+{{- end }}
+
+{{- define "thumbor-resources" }}
+## resources - thumbor
+{{ template "sidecar-resources" $ }}
+{{- end }}
+
+{{- define "micro-sidecar-resources" }}
+{{ template "micro-resources" $ }}
+{{- end }}
+
+{{- define "sidecar-resources" }}
+{{ template "small-resources" $ }}
+{{- end }}
+
+{{- define "guarantee-sidecar-resources" }}
+{{ template "guarantee-micro-resources" $ }}
+{{- end }}
+
+{{- define "default-resources" }}
+## resources - default
+{{ template "medium-resources" $ }}
+{{- end }}
+
+{{- define "guarantee-resources" }}
+{{ template "guarantee-medium-resources" $ }}
+{{- end }}

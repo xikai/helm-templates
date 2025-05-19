@@ -1,0 +1,41 @@
+{{- define "validate-duplicate-name" }}
+{{- $rt := $._ }}
+{{- $defaultName := (include "get-name" $rt) }}
+{{- $uniqueSet := dict }}
+{{- range $key, $values := $rt.Values }}
+  {{- range $prefix := $.prefixList }}
+    {{- if (and (hasPrefix $prefix $key) (not (eq $key "serviceAccounts"))) }}
+      {{- if hasPrefix "multi" $key }}
+        {{- range $name, $valuesInMulti := $values.multi }}
+          {{- $uname := $name }}
+          {{- if hasKey $uniqueSet $uname }}
+            {{- required (printf " duplicated [name: %s] found in [%s, %s]" $uname (index $uniqueSet $uname) $key) "" }}
+          {{- else }}
+            {{- $uniqueSet = set $uniqueSet $uname $key }}
+          {{- end }}
+        {{- end }}
+      {{- else }}
+        {{- $uname := $defaultName }}
+        {{- if $values.name }}
+          {{- $uname = $values.name }}
+        {{- end }}
+        {{- if hasKey $uniqueSet $uname }}
+            {{- required (printf " duplicated [name: %s] found in [%s, %s]" $uname (index $uniqueSet $uname) $key) "" }}
+        {{- else }}
+          {{- $uniqueSet = set $uniqueSet $uname $key }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "validation" }}
+{{- $rt := $ }}
+  {{- template "validate-duplicate-name" (dict "_" $ "prefixList" (list "deployment" "multiDeployment")) }}
+  {{- template "validate-duplicate-name" (dict "_" $ "prefixList" (list "service" "multiService")) }}
+  {{- template "validate-duplicate-name" (dict "_" $ "prefixList" (list "ingress" "multiIngress")) }}
+  {{- template "validate-duplicate-name" (dict "_" $ "prefixList" (list "job" "multiJob")) }}
+  {{- template "validate-duplicate-name" (dict "_" $ "prefixList" (list "cronjob" "multiCronjob")) }}
+  {{- template "validate-duplicate-name" (dict "_" $ "prefixList" (list "pvc" "multiPvc")) }}
+{{- end }}

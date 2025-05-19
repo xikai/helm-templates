@@ -1,0 +1,287 @@
+## full values example
+
+# to make resources class use same resources on non-production stage
+stage: loadtest
+
+images:
+  nginx:
+    repository: nginx
+    tag: latest
+    pullPolicy: Always
+
+#optional
+configMapFiles:
+  nginx:
+    folder: nginx
+    file: "**"
+#optional
+secretFiles:
+  some_private_key:
+    folder: secrets
+    file: "**"
+#optional
+secretBinaryFiles:
+  some_key_store:
+    folder: keystore
+    file: "**"
+#optional
+configMapBinaryFiles:
+  some_binary:
+    folder: binary
+    file: "**"
+#optional
+secretEnv:
+  dotenv:
+    folder: aaa
+    file: env.yml
+## fluxcd use
+#optional
+secretBinaryFilesExternal:
+  some_key_store:
+    folder: keystore
+    file: "**"
+#optional
+configMapBinaryFilesExternal:
+  some_binary:
+    folder: binary
+    file: "**"
+#optional
+secretEnvExternal:
+  dotenv:
+    folder: aaa
+    file: env.yml
+
+#optional
+# predefine service account with cluster role added
+# (non cluster role to be supported later)
+serviceAccounts:
+  readonly:
+    clusterRoles:
+    - cluster-dashboard-readonly
+    # for use namespaced cluster role
+    clusterRoleToRoles:
+    - edit
+    # for namespaced roles
+    roles: []
+
+deployment:
+  # disable hpa explicitly
+  disableHpa: true
+  # hpa overwrite
+  hpa:
+    min: 1
+    max: 1
+## deprecated
+#  volumes:
+#    configMap:
+#    - nginx
+#    secret:
+#    - dotenv
+#    - secrets
+  raw:
+    initContainers:
+    - name: test
+      image: busybox
+      command: ["echo", "ok"]
+  replicaCount: 1
+  annotations:
+    aaa: bb
+  labels:
+    ccc: dd
+  # explicitly disable enableAutoDeploy, `true` not work as expected for now
+#  enableAutoDeploy: false
+  iam: "arn:aws:iam::271368589659:role/k8s-keel-pull-ecr-assumed"
+
+  containers:
+    default:
+      raw:
+        # any origin config under container
+
+      # command and args
+      command: ["echo", "ok"]
+      args: ["aa", "bb"]
+      # defined in images
+      image: nginx
+      port: 8080
+
+      healthcheck:
+        ## either one
+#        tcp:
+#          port: 8080
+
+        ## http check
+        ## use default value if http is set which sub values not set
+        ## host cannot be set to 127.0.0.1 if not host network, default to pod ip
+        ## if rely on nginx header, add header
+        http:
+          port: 80
+          path: /healthcheck
+          scheme: HTTP
+          httpHeaders:
+            # must be `Host`, not host or HOST...
+            Host: xxx.com
+
+      # require to define in volumes
+      volumeMounts:
+        # key name reference to configMapFiles,secretFiles,secretEnv
+        some_private_key:
+          path: /tmp/
+          files:
+          - xxx.conf
+          # the file read write execute mode, can be skipped to use default,
+          # default should be 0644
+          mode: 0644
+        some_key_store:
+          path: /keystore/
+        some_binary:
+          path: /binary/
+
+      envFrom:
+      # array reference to configMapFiles,secretFiles,secretEnv
+      - dotenv
+      env:
+        key1: value1
+        key2: value2
+
+      # select resources grade
+      # - guarantee-medium, medium, guarantee-micro, small, micro
+      # - reference resources.yaml in `general-templates/templates`
+      resourcesGrade: large
+      # overwrite resources with detail numbers
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "200m"
+        limits:
+          memory: "256Mi"
+          cpu: "200m"
+
+ingress:
+  enableHttpsRedirect: true
+  internal: true
+  annotations: {}
+  portName: http
+  hosts:
+  - host: sample.companytester.com
+    paths:
+    - "/"
+
+serviceStatic:
+  name: self-media-pua-web-static
+  portName: next
+
+ingressServicePaths:
+  hosts:
+  - host: self-media-pua.companytester.com
+    servicePaths:
+    - path: "/_next/static/"
+      service: self-media-pua-web-static
+    - path: "/"
+
+pvcCache:
+  name: cache
+  # kubectl get storageclass
+  storageClass: efs-delete
+  size: 2Gi
+
+multiDeployment:
+  base:
+    disableHpa: true
+    enableAutoDeploy: false
+    replicaCount: 1
+    containers:
+      ssh:
+        image: ssh
+        port: 22
+        portName: sshd
+        resourcesGrade: micro
+      redir:
+        resourcesGrade: micro
+        image: redir
+        port: 8080
+        portName: http
+        command:
+        - redir
+        - --lport=8080
+        - --laddr=0.0.0.0
+        - --caddr=127.0.0.1
+        - --cport=80
+  multi:
+    sre:
+      containers:
+        ssh:
+          volumeMounts:
+            sre: &volume
+              path: /root/.ssh
+              mode: "0600"
+              files:
+              - authorized_keys
+    core:
+      containers:
+        ssh:
+          volumeMounts:
+            sre: *volume
+    wallet:
+      containers:
+        ssh:
+          volumeMounts:
+            sre: *volume
+
+multiService:
+  base:
+    type: NodePort
+    portName: sshd
+  multi:
+    sre-ssh:
+      deploymentName: sre
+    core-ssh:
+      deploymentName: core
+    wallet-ssh:
+      deploymentName: wallet
+
+multiIngress:
+  base:
+  multi:
+    sre:
+      deploymentName: sre
+      hosts:
+      - host: sre-sshd.companytester.com
+    core:
+      deploymentName: core
+      hosts:
+      - host: core-sshd.companytester.com
+    wallet:
+      deploymentName: sre
+      hosts:
+      - host: wallet-sshd.companytester.com
+
+tags:
+  tier: 4
+  team: core-tools
+  notifies:
+  - slack-alert-devops
+  - slack-alert-k8s-warning
+
+
+## Ingress cross namespace call svc
+serviceBackendApi:
+  name: backend-api
+  type: ExternalName
+  externalName: api.default.svc
+  port: 909
+  # targetPort: 22
+  # portName: xxx
+  # ports:
+  #   xxx:
+  #     port: 22
+  #     protocol: TCP
+  #     targetPort: 22
+ingress:
+  hosts:
+  - host: test.example.com
+    servicePaths:
+    - path: /
+      servicePortName: http
+    - path: /api/
+      service: backend-api
+      servicePortName: http

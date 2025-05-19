@@ -1,0 +1,47 @@
+{{- define "get-name" }}
+{{- default $.Chart.Name .Values.name | trunc 63 | trimSuffix "-" -}}
+{{- end }}
+
+{{- define "get-svc-port-name" }}
+{{- "http" -}}
+{{- end }}
+
+{{- define "is-data" }}
+  {{- if (eq $.Values._info.stage "data") -}}
+{{- 1 -}}
+  {{- else -}}
+  {{- end -}}
+{{- end }}
+
+{{- define "is-production" }}
+  {{- if (or (hasSuffix "production" $.Values._info.stage ) (eq $.Values._info.stage "data")) -}}
+{{- 1 -}}
+  {{- else if (hasKey $.Values "stage") -}}
+    {{- if (eq $.Values.stage "loadtest") -}}
+{{- 1 -}}
+    {{- end -}}
+  {{- else -}}
+  {{- end -}}
+{{- end }}
+
+{{- define "default-hpa" }}
+  {{- if (include "is-production" $)}}
+cpu: 80
+min: 2
+max: 10
+  {{- else }}
+cpu: 80
+min: 1
+max: 2
+  {{- end }}
+{{- end }}
+
+{{- define "add-raw" }}
+{{- with . }}
+{{ toYaml . }}
+{{- end }}
+{{- end }}
+
+{{- define "now-datetime" }}
+{{- (now | date "20060102030405") -}}
+{{- end }}

@@ -1,0 +1,144 @@
+{{- define "create-project-tag" }}
+{{- $rt := $ }}
+{{- $defaultName := (include "get-name" $rt) }}
+{{- $tags := $rt.Values.tags}}
+{{ $ingresses := include "add-ingresses-project-tag" $rt }}
+{{ $albIngresses := include "add-alb-ingresses-project-tag" $rt }}
+
+---
+apiVersion: crd.k8s.company01.com/v1
+kind: ProjectTag
+metadata:
+  name: {{ $defaultName }}
+  namespace: {{ $rt.Release.Namespace }}
+spec:
+  stage: {{ default "unknown" (default $rt.Values.stage $rt.Values._info.stage) }}
+  tier: {{ default -1 $tags.tier }}
+  {{- if empty $tags.notifies }}
+  notifies: []
+  {{- else }}
+  notifies:
+    {{- range $tags.notifies }}
+  - {{ . }}
+    {{- end }}
+  {{- end }}
+  team: {{ default "unknown" $tags.team }}
+  {{- if empty $tags.teams }}
+  teams: []
+  {{- else }}
+  teams:
+    {{- range $tags.teams }}
+  - {{ . }}
+    {{- end }}
+  {{- end }}
+  {{- if (and (empty $ingresses) (empty $albIngresses)) }}
+  ingresses: []
+  {{- else if empty $albIngresses }}
+  ingresses:
+  {{- $ingresses }}
+  {{- else }}
+  ingresses:
+  {{- $albIngresses }}
+  {{- end }}
+
+  relatedNames:
+  # default
+  - {{ $defaultName }}
+  {{- range $key, $values := $rt.Values }}
+  {{- include "add-names-project-tag" (dict "prefix" "deployment" "values" $values "key" $key) | indent 2 }}
+  {{- include "add-names-project-tag" (dict "prefix" "job" "values" $values "key" $key) | indent 2 }}
+  {{- include "add-names-project-tag" (dict "prefix" "cronjob" "values" $values "key" $key) | indent 2 }}
+
+  {{- include "add-multi-names-project-tag" (dict "prefix" "multiDeployment" "values" $values "key" $key) | indent 2 }}
+  {{- include "add-multi-names-project-tag" (dict "prefix" "multiJob" "values" $values "key" $key) | indent 2 }}
+  {{- include "add-multi-names-project-tag" (dict "prefix" "multiCronjob" "values" $values "key" $key) | indent 2 }}
+
+  {{- end }}
+{{- end }}
+
+{{- define "add-ingresses-project-tag" }}
+{{- $rt := $ }}
+{{- range $key, $values := $rt.Values }}
+  {{- if hasPrefix "ingress" $key }}
+{{- include "add-ingress-project-tag" $values | indent 2 }}
+  {{- end }}
+  {{- if hasPrefix "multiIngress" $key }}
+    {{- range $name, $valuesOverwritten := $values.multi }}
+      {{- $deepcopyBase :=  $values.base | toYaml | fromYaml }}
+      {{- $mergedValues := mergeOverwrite $deepcopyBase $valuesOverwritten }}
+{{- include "add-ingress-project-tag" $mergedValues | indent 2 }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "add-ingress-project-tag" }}
+{{- range .hosts }}
+- host: {{ .host }}
+  paths:
+  {{- if not (empty .paths) }}
+    {{- range .paths }}
+  - {{ . }}
+    {{- end }}
+  {{- else if not (empty .servicePaths) }}
+    {{- range .servicePaths }}
+  - {{ .path }}
+    {{- end }}
+  {{- else }}
+  - /
+  {{- end }}
+{{- end }}
+{{- end }}
+
+
+{{- define "add-alb-ingresses-project-tag" }}
+{{- $rt := $ }}
+{{- range $key, $values := $rt.Values }}
+  {{- if hasPrefix "albIngress" $key }}
+{{- include "add-alb-ingress-project-tag" $values | indent 2 }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "add-alb-ingress-project-tag" }}
+{{- range .hosts }}
+- host: {{ .host }}
+  paths:
+  {{- if not (empty .paths) }}
+    {{- range .paths }}
+  - {{ . }}
+    {{- end }}
+  {{- else if not (empty .servicePaths) }}
+    {{- range .servicePaths }}
+  - {{ .path }}
+    {{- end }}
+  {{- else }}
+  - /
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "add-names-project-tag" }}
+{{- $prefix := $.prefix }}
+{{- $values := $.values }}
+{{- $key := $.key }}
+{{- if hasPrefix $prefix $key }}
+  {{- with $values.name }}
+# {{ $prefix }}
+- {{ . }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+
+{{- define "add-multi-names-project-tag" }}
+{{- $prefix := $.prefix }}
+{{- $values := $.values }}
+{{- $key := $.key }}
+{{- if hasPrefix $prefix $key }}
+  {{- range $name, $valuesOverwritten := $values.multi }}
+# {{ $prefix }}
+- {{ $name }}
+  {{- end }}
+{{- end }}
+{{- end }}

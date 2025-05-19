@@ -1,0 +1,54 @@
+## chart: {{.Chart.Name}}-{{.Chart.Version}}
+{{- define "general-web" }}
+
+## template general web
+{{- template "create-configmap-secrets" $ }}
+{{- template "create-service-accounts" $ }}
+{{- template "create-project-tag" $ }}
+{{- template "validation" $ }}
+
+{{- range $key, $values := $.Values }}
+  {{- if hasPrefix "deployment" $key }}
+{{- template "create-deployment" (dict "_" $ "key" $key)  }}
+
+  {{- else if (and (hasPrefix "service" $key) (not (eq $key "serviceAccounts")))  }}
+{{- template "create-service" (dict "_" $ "key" $key) }}
+
+  {{- else if hasPrefix "ingress" $key }}
+{{- template "create-service-ingress" (dict "_" $ "key" $key) }}
+
+  {{- else if hasPrefix "albIngress" $key }}
+{{- template "create-alb-service-ingress" (dict "_" $ "key" $key) }}
+
+  {{- else if hasPrefix "job" $key }}
+{{- template "create-job" (dict "_" $ "key" $key) }}
+
+  {{- else if hasPrefix "cronjob" $key }}
+{{- template "create-cronjob" (dict "_" $ "key" $key) }}
+
+  {{- else if hasPrefix "pvc" $key }}
+{{- template "create-pvc" (dict "_" $ "key" $key) }}
+
+  {{- else if hasPrefix "multiDeployment" $key }}
+{{- template "create-multi-deployment" (dict "_" $ "key" $key)  }}
+
+  {{- else if hasPrefix "multiService" $key }}
+{{- template "create-multi-service" (dict "_" $ "key" $key)  }}
+
+  {{- else if hasPrefix "multiIngress" $key }}
+{{- template "create-multi-service-ingresse" (dict "_" $ "key" $key)  }}
+
+  {{- else if hasPrefix "multiJob" $key }}
+{{- template "create-multi-job" (dict "_" $ "key" $key)  }}
+
+  {{- else if hasPrefix "multiCronjob" $key }}
+{{- template "create-multi-cronjob" (dict "_" $ "key" $key)  }}
+
+  {{- else if hasPrefix "multiPvc" $key }}
+{{- template "create-multi-pvc" (dict "_" $ "key" $key)  }}
+
+  {{- else }}
+  {{- end }}
+{{- end }}
+
+{{- end }}

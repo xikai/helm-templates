@@ -1,0 +1,143 @@
+{{- define "create-cronjob" }}
+{{- $rt := $._ }}
+{{- $valueKey := (default "cronjob" $.key) }}
+{{- $overwritten := $.overwritten }}
+{{- $defaultName := (include "get-name" $rt) }}
+
+{{- with (default (index $rt.Values $valueKey) $overwritten) }}
+{{- $cronJobName := (printf "%s-job" (default $defaultName .name )) }}
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: {{ $cronJobName }}
+  namespace: {{ $rt.Release.Namespace }}
+  labels:
+  annotations:
+spec:
+  schedule: {{ .schedule | quote }}
+  failedJobsHistoryLimit: {{ default 1 .failedJobsHistoryLimit }}
+  successfulJobsHistoryLimit: {{ default 1 .successfulJobsHistoryLimit }}
+  concurrencyPolicy: {{ default "Allow" .concurrencyPolicy }}
+  startingDeadlineSeconds: {{ default 60 .startingDeadlineSeconds}}
+  suspend: {{ default "false" .suspend }}
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      # ttlSecondsAfterFinished: {{ default 120 .ttlSecondsAfterFinished }} # for k8s version 1.13.0 only
+      activeDeadlineSeconds: {{ default 3600 .activeDeadlineSeconds }}
+      template:
+        metadata:
+          annotations:
+            {{- include "add-dep-hash-annotations" $rt | indent 12 }}
+            {{- include "add-iam" . | indent 12 }}
+          labels:
+            app: {{ $cronJobName }}
+        spec:
+          restartPolicy: {{ default "Never" .restartPolicy }}
+          {{- $deploymentDict := dict "_" $rt "deployment" . }}
+          {{- include "add-raw" .raw | indent 10 }}
+          {{- include "add-service-account" . | indent 10 }}
+          {{- include "add-node-selector" . | indent 10 }}
+          {{- include "add-tolerations" . | indent 10 }}
+          {{- include "add-volumes" $deploymentDict | indent 10 }}
+  {{- with .initContainers }}
+          initContainers:
+    {{- range $name, $container := . }}
+      {{- with $container }}
+        {{- $containerDict := dict "_" $rt "container" . }}
+        {{- if eq $name "default" }}
+          - name: {{ $cronJobName }}-init
+        {{- else }}
+          - name: {{ $name }}
+        {{- end }}
+            {{- include "add-container-attributes" $containerDict | indent 12 }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+
+          containers:
+  {{- $containers := .containers }}
+  {{- range $name, $container := $containers }}
+    {{- with $container }}
+      {{- $containerDict := dict "_" $rt "container" . }}
+      {{- if eq $name "default" }}
+          - name: {{ $cronJobName }}
+      {{- else }}
+          - name: {{ $name }}
+      {{- end }}
+          {{- include "add-container-attributes" $containerDict | indent 12 }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "create-job" }}
+{{- $rt := $._ }}
+{{- $valueKey := (default "job" $.key) }}
+{{- $overwritten := $.overwritten }}
+{{- $defaultName := (include "get-name" $rt) }}
+
+{{- with (default (index $rt.Values $valueKey) $overwritten) }}
+{{- $jobName := (printf "%s-job" (default $defaultName .name )) }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $jobName }}-{{ template "now-datetime" }}
+  namespace: {{ $rt.Release.Namespace }}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: {{ default 120 .ttlSecondsAfterFinished }} # for k8s version 1.13.0 only
+  activeDeadlineSeconds: {{ default 3600 .activeDeadlineSeconds }}
+{{- /*
+Once a Job reaches activeDeadlineSeconds, all of its running Pods are terminated and the Job status will become type: Failed with reason: DeadlineExceeded
+*/}}
+  template:
+    metadata:
+      annotations:
+        {{- include "add-dep-hash-annotations" $rt | indent 8 }}
+        {{- include "add-iam" . | indent 8 }}
+      {{- with .annotations }}
+        {{- include "add-raw" . | indent 8 }}
+      {{- end }}
+      labels:
+        app: {{ $jobName }}
+    spec:
+      restartPolicy: {{ default "Never" .restartPolicy }}
+      {{- $deploymentDict := dict "_" $rt "deployment" . }}
+      {{- include "add-raw" .raw | indent 6 }}
+      {{- include "add-service-account" . | indent 6 }}
+      {{- include "add-node-selector" . | indent 6 }}
+      {{- include "add-tolerations" . | indent 6 }}
+      {{- include "add-volumes" $deploymentDict | indent 6 }}
+  {{- with .initContainers }}
+      initContainers:
+    {{- range $name, $container := . }}
+      {{- with $container }}
+      {{- $containerDict := dict "_" $rt "container" . }}
+    {{- if eq $name "default" }}
+      - name: {{ $jobName }}-init
+    {{- else }}
+      - name: {{ $name }}
+    {{- end }}
+        {{- include "add-container-attributes" $containerDict | indent 8 }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+
+      containers:
+  {{- $containers := .containers }}
+  {{- range $name, $container := $containers }}
+    {{- with $container }}
+    {{- $containerDict := dict "_" $rt "container" . }}
+    {{- if eq $name "default" }}
+      - name: {{ $jobName }}
+    {{- else }}
+      - name: {{ $name }}
+    {{- end }}
+      {{- include "add-container-attributes" $containerDict | indent 8 }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}

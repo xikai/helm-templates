@@ -1,0 +1,75 @@
+{{- define "create-ppt-autoscaler-rbac" }}
+{{- if not empty $.Values.rbacPptAutoscaler }}
+{{- $name := $.Values.rbacPptAutoscaler }}
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $name }}
+subjects:
+- kind: ServiceAccount
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: cluster-proportional-autoscaler
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+{{- end }}
+
+
+{{- define "create-ppt-autoscaler" }}
+{{- $rt := $._ }}
+{{- $deploymentName := $.deploymentName }}
+---
+{{- if not empty $rt.Values.rbacPptAutoscaler }}
+{{- $autoScalerName := printf "%s-ppt-autoscaler" $deploymentName  }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $autoScalerName }}
+  namespace: {{ $rt.Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ $autoScalerName }}
+  template:
+    metadata:
+      labels:
+        app: {{ $autoScalerName }}
+    spec:
+      containers:
+        - image: gcr.io/google_containers/cluster-proportional-autoscaler-amd64:1.1.2
+          name: autoscaler
+          command:
+            - /cluster-proportional-autoscaler
+            - --namespace={{ $rt.Release.Namespace }}
+            - --configmap={{ $autoScalerName }}
+            - --target=deployment/{{ $deploymentName }}
+            - --logtostderr=true
+            - --v=2
+      serviceAccountName: {{ $.Values.rbacPptAutoscaler }}
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ $autoScalerName }}
+  namespace: {{ $rt.Release.Namespace }}
+data:
+  linear: |-
+    {
+      "coresPerReplica": 100,
+      "nodesPerReplica": 1,
+      "min": 1,
+      "max": 100,
+      "preventSinglePointFailure": true
+    }
+{{- end }}
+{{- end }}

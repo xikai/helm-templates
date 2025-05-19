@@ -1,0 +1,20 @@
+{{- define "create-limit-range" }}
+{{- if false }}
+---
+# limits
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: {{ $.Release.Namespace }}
+spec:
+  limits:
+  - default:
+      memory: {{ template "default-resources-requests-memory" $ }}
+      cpu: {{ template "default-resources-requests-cpu" $ }}
+    defaultRequest:
+      memory: {{ template "default-resources-requests-memory" $ }}
+      cpu: {{ template "default-resources-requests-cpu" $ }}
+    type: Container
+{{- end }}
+{{- end }}

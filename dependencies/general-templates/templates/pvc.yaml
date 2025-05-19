@@ -1,0 +1,22 @@
+{{- define "create-pvc" }}
+{{- $rt := $._ }}
+{{- $valueKey := (default "pvc" $.key) }}
+{{- $overwritten := $.overwritten }}
+
+{{- with (default (index $rt.Values $valueKey) $overwritten) }}
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{ .name }}
+  namespace: {{ $rt.Release.Namespace }}
+  annotations:
+    volume.beta.kubernetes.io/storage-class: {{ .storageClass | quote }}
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: {{ .size }}
+{{- end }}
+{{- end }}

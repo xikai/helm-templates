@@ -1,0 +1,162 @@
+{{- define "add-ingress-annotations" }}
+    {{- if or (not (hasKey . "enableHttpsRedirect")) }}
+    # https redirect
+    ingress.kubernetes.io/ssl-redirect: "true"
+    ingress.kubernetes.io/ssl-proxy-headers: "X-Forwarded-Proto:https"
+    {{- end }}
+    {{- if not (empty .class) }}
+    kubernetes.io/ingress.class: {{ .class }}
+    {{- else if .internal }}
+    # internal elb
+    kubernetes.io/ingress.class: "internal"
+    {{- else }}
+    {{- /* kubernetes.io/ingress.class: "traefik" */ -}}
+    {{- end }}
+    {{- with .redirectRoot }}
+    # redirect root
+    traefik.ingress.kubernetes.io/app-root: {{ . | quote }}
+    {{- end }}
+    {{- if .pathPrefixStrip }}
+    # strip prefix
+    # e.g. request url /api => backend get /
+    traefik.ingress.kubernetes.io/rule-type: PathPrefixStrip
+    {{- end }}
+  {{- with .annotations }}
+    # other annotations
+{{ toYaml . | indent 4 }}
+  {{- end }}
+{{- end }}
+
+{{- define "create-service" }}
+{{- $rt := $._ }}
+{{- $valueKey := (default "service" $.key) }}
+{{- $overwritten := $.overwritten }}
+{{- $defaultName := (include "get-name" $rt) }}
+{{- $defaultPortName := (include "get-svc-port-name" $rt) }}
+{{- $servicePortName := "http" }}
+
+{{- with (default (index $rt.Values $valueKey) $overwritten) }}
+{{- $name := (default $defaultName .name ) }}
+{{- $deploymentName := (default $defaultName .deploymentName) }}
+{{- $portName := (default $defaultPortName .portName ) }}
+{{- $port := (default "80" .port ) }}
+{{- $type := (default "ClusterIP" .type ) }}
+---
+# service
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{ $name }}
+  namespace: {{ $rt.Release.Namespace }}
+  labels:
+    app: {{ $name }}
+  annotations:
+    {{- with .loadBalancer }}
+      {{- if .internal }}
+    service.beta.kubernetes.io/aws-load-balancer-internal: "0.0.0.0/0"
+      {{- end }}
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: {{ default "tcp" .backendProtocol }}
+      {{- with .securityGroups}}
+    service.beta.kubernetes.io/aws-load-balancer-extra-security-groups: {{ . | quote}}
+      {{- end }}
+      {{- with .timeout}}
+    service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: {{ . | quote}}
+      {{- end }}
+      {{- with .cert }}
+    service.beta.kubernetes.io/aws-load-balancer-ssl-cert: {{ . | quote}}
+    service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "443"
+      {{- end }}
+    {{- end }}
+  {{- with .serviceAnnotations }}
+    # other annotations
+{{ toYaml . | indent 4 }}
+  {{- end }}
+spec:
+  type: {{ $type }}
+  {{- with .loadBalancerSourceRanges}}
+  loadBalancerSourceRanges:
+  {{- include "add-raw" . | indent 2 }}
+  {{- end }}
+  {{- if (eq $type "ExternalName") }}
+  externalName: {{ .externalName }}
+  {{- end }}
+  selector:
+    app: {{ $deploymentName }}
+  ports:
+  {{- if not (empty .ports) }}
+    {{- range $name, $values := .ports }}
+      {{- with $values }}
+  - name: {{ $name }}
+    targetPort: {{ default $portName .portName }}
+    port: {{ .port }}
+        {{- with .protocol }}
+    protocol: {{ . }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+  {{- else }}
+  - name: {{ $servicePortName }}
+    port: {{ $port }}
+    targetPort: {{ $portName }}
+    {{- with .protocol }}
+    protocol: {{ . }}
+    {{- end }}
+    {{- with .nodePort }}
+    nodePort: {{ . }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "create-service-ingress" }}
+{{- $rt := $._ }}
+{{- $valueKey := (default "ingress" $.key) }}
+{{- $overwritten := $.overwritten }}
+{{- $defaultName := (include "get-name" $rt) }}
+{{- $servicePortName := "http" }}
+
+{{- with (default (index $rt.Values $valueKey) $overwritten) }}
+{{- $name := (default $defaultName .name ) }}
+{{- template "create-service" (dict "_" $rt "key" $valueKey ) }}
+---
+{{- if not (empty .hosts) }}
+# ingress
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  namespace: {{ $rt.Release.Namespace }}
+  annotations:
+    {{- template "add-ingress-annotations" . }}
+spec:
+  rules:
+  {{- range .hosts }}
+  - http:
+    {{- if not (empty .paths) }}
+      paths:
+      {{- range .paths }}
+      - path: {{ . }}
+        backend:
+          serviceName: {{ $name }}
+          servicePort: {{ $servicePortName }}
+      {{- end }}
+    {{- else if not (empty .servicePaths) }}
+      paths:
+      {{- range .servicePaths }}
+      - path: {{ .path }}
+        backend:
+          serviceName: {{ default $name .service }}
+          servicePort: {{ default $servicePortName .servicePortName }}
+      {{- end }}
+    {{- else }}
+      paths:
+      - path: /
+        backend:
+          serviceName: {{ $name }}
+          servicePort: {{ $servicePortName }}
+    {{- end }}
+    host: {{ default "missing.domain" .host }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
